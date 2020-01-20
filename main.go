@@ -8,7 +8,7 @@ import (
 
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
-	mb "mBoxGo/mbox"
+	tab "Tablam_go/mbox"
 )
 
 const hma string = "<span foreground=\"black\" background=\"white\" size=\"medium\"><tt><b>"
@@ -33,7 +33,6 @@ func main() {
 	mainWin(mbData)
 
 	gtk.Main()
-
 }
 
 func mainWin(mbData [][]string) {
@@ -54,7 +53,7 @@ func mainWin(mbData [][]string) {
 	vbox.Add(headText)
 
 	aligns := []string{"rigth", "left", "center", "left"}
-	mbox := mb.NewMBox(mbData, true, aligns)
+	mbox := tab.NewTablam(mbData, true, aligns)
 	mbox.SetCursorMarkup(cma, cmb)
 	vbox.Add(mbox.Grid)
 
