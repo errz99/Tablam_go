@@ -8,7 +8,7 @@ import (
 
 	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
-	tab "Tablam_go/mbox"
+	tb "Tablam_go/tablam"
 )
 
 const hma string = "<span foreground=\"black\" background=\"white\" size=\"medium\"><tt><b>"
@@ -53,9 +53,9 @@ func mainWin(mbData [][]string) {
 	vbox.Add(headText)
 
 	aligns := []string{"rigth", "left", "center", "left"}
-	mbox := tab.NewTablam(mbData, true, aligns)
-	mbox.SetCursorMarkup(cma, cmb)
-	vbox.Add(mbox.Grid)
+	tab := tb.NewTablam(mbData, true, aligns)
+	tab.SetCursorMarkup(cma, cmb)
+	vbox.Add(tab.Grid)
 
 	close, _ := gtk.ButtonNewWithLabel("Close")
 	vbox.PackEnd(close, false, false, 0)
@@ -71,41 +71,41 @@ func mainWin(mbData [][]string) {
 
 		switch kval {
 		case gdk.KEY_Up:
-			mbox.CursorUp()
+			tab.CursorUp()
 
 		case gdk.KEY_Down:
-			mbox.CursorDown()
+			tab.CursorDown()
 
 		case gdk.KEY_Escape:
-			if mbox.CursorIsActive() {
-				mbox.ClearCursor()
+			if tab.CursorIsActive() {
+				tab.ClearCursor()
 			} else {
 				gtk.MainQuit()
 			}
 
 		case gdk.KEY_Return:
-			if mbox.ActiveData() != nil {
-				fmt.Println(mbox.ActiveData())
+			if tab.ActiveData() != nil {
+				fmt.Println(tab.ActiveData())
 			} else {
 				fmt.Println("no data active")
 			}
 
 		case gdk.KEY_Delete:
-			mbox.DeleteActiveRow()
+			tab.DeleteActiveRow()
 
 		case gdk.KEY_Insert:
-			mbox.AddRow(modify([]string{"20190101", "Mi veloz router",
+			tab.AddRow(modify([]string{"20190101", "Mi veloz router",
 				"www.here.com", "Acceso all router de casa"}))
 
 		case gdk.KEY_F12:
-			mbox.ReverseData()
+			tab.ReverseData()
 
 		case gdk.KEY_e:
 			//if eventKey.state & ModifierType.CONTROL_MASK) {
-			toEdit := mbox.ActiveData()
+			toEdit := tab.ActiveData()
 			if toEdit != nil {
 				edited := modify(toEdit)
-				mbox.EditActiveRow(edited)
+				tab.EditActiveRow(edited)
 			}
 			//}
 
@@ -123,15 +123,15 @@ func mainWin(mbData [][]string) {
 		//		auto eb = e.button();
 		//
 		//		if (e.isDoubleClick(eb)) {
-		//			writeln("mbox double check: get row data");
-		//			if (mbox.activeData() != []) {
-		//				writeln(mbox.activeData());
+		//			writeln("tab double check: get row data");
+		//			if (tab.activeData() != []) {
+		//				writeln(tab.activeData());
 		//			} else {
 		//				writeln("no data active");
 		//			}
 		//
 		//		} else {
-		//			//writeln("mbox single check: get position");
+		//			//writeln("tab single check: get position");
 		//		}
 		//		return true;
 
