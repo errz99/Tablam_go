@@ -1,9 +1,12 @@
 package mbox
 
 import (
-	//"fmt"
+	"fmt"
+	"strconv"
+	"strings"
+	"unicode/utf8"
 
-	//"github.com/gotk3/gotk3/gdk"
+	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
 )
 
@@ -15,31 +18,31 @@ const cma string = "<span foreground=\"white\" background=\"#6666dd\"><tt>"
 const cmb string = "</tt></span>"
 
 type MBox struct {
-	hasHead 		bool
-	//rbs 			[]RowBox
-	data 			[][]string
-	datax 			[][]string
-	position 		int
-	outPosition 	int // = -1
-	lastPosition 	int // = -1
-	headMarkup 		[2]string
-	dataMarkup 		[2]string
-	cursorMarkup 	[2]string
-	hsep 			int // = 3
-	max 			[]int // ulong
-	changedMax 		[]int
-	separation 		int // = 1
-	sep  			string // = " "
-	aligns 			[]string
-	Grid 			*gtk.Grid
+	hasHead      bool
+	rbs          []RowBox
+	data         [][]string
+	datax        [][]string
+	position     int
+	outPosition  int
+	lastPosition int
+	headMarkup   [2]string
+	dataMarkup   [2]string
+	cursorMarkup [2]string
+	hsep         int
+	max          []int
+	changedMax   []int
+	separation   int
+	sep          string
+	aligns       []string
+	Grid         *gtk.Grid
 }
 
-func NewMBox(data [][]string, hasHead bool, als []string) MBox { // als = []
+func NewMBox(data [][]string, hasHead bool, aligns []string) MBox {
 	grid, _ := gtk.GridNew()
 
 	var mbox = MBox{
 		hasHead,
-		//nil,
+		nil,
 		nil,
 		nil,
 		0,
@@ -57,322 +60,330 @@ func NewMBox(data [][]string, hasHead bool, als []string) MBox { // als = []
 		grid,
 	}
 
-	if mbox.hasHead == true { mbox.outPosition++ }
+	if mbox.hasHead == true {
+		mbox.outPosition++
+	}
 
 	mbox.position = mbox.outPosition
 	mbox.lastPosition = mbox.outPosition
-
-	//sep = " ".replicate(separation);
+	mbox.sep = strings.Repeat(" ", mbox.separation)
 	mbox.max = make([]int, len(data[0]))
+
+	if aligns == nil {
+		for range data[0] {
+			mbox.aligns = append(mbox.aligns, "right")
+		}
+	} else {
+		mbox.aligns = aligns
+	}
+
+	grid.SetHAlign(gtk.ALIGN_CENTER)
+	grid.SetBorderWidth(8)
+	grid.SetRowSpacing(uint(mbox.hsep))
+
+	for _, d := range data {
+		mbox.AddRow(d)
+	}
 
 	return mbox
 }
 
+func (mb *MBox) SetHeadMarkup(a, b string) {
+	mb.headMarkup = [2]string{a, b}
+}
 
-/*
-	this(string[][] data, bool hasHead, string[] als = []) {
-		headMarkup = [hma, hmb];
-		dataMarkup = [dma, dmb];
-		cursorMarkup = [cma, cmb];
+func (mb *MBox) SetDataMarkup(a, b string) {
+	mb.dataMarkup = [2]string{a, b}
+}
 
-		_hasHead = hasHead;
-		if (_hasHead == true) outPosition++;
+func (mb *MBox) SetCursorMarkup(a, b string) {
+	mb.cursorMarkup = [2]string{a, b}
+}
 
-		position = outPosition;
-		lastPosition = outPosition;
-		sep = " ".replicate(separation);
-		max.length = data[0].length;
+func (mb *MBox) SetElemAlign(i int, halign string) {
+	mb.aligns[i] = halign
+}
 
-		if (als == []) {
-			aligns.length = data[0].length;
-			foreach (ref ha; aligns) {
-				ha = "right";
-			}
+func (mb *MBox) CursorDown() {
+	if (mb.hasHead == true && len(mb.rbs) > 1) || (mb.hasHead == false && len(mb.rbs) > 0) {
+		mb.lastPosition = mb.position
+
+		if mb.position < len(mb.rbs)-1 {
+			mb.position++
 		} else {
-			aligns = als;
+			mb.position = mb.outPosition + 1
 		}
 
-		super();
-		setHalign(Align.CENTER);
-		setBorderWidth(8);
-		setRowSpacing(hsep);
-
-		foreach (d; data) {
-			addRow(d);
-		}
+		mb.updateCursor()
 	}
 
-	void setHeadMarkup(string a, string b) {
-		headMarkup = [a, b];
+	fmt.Println("down", mb.position)
+}
+
+func (mb *MBox) CursorUp() {
+	mb.lastPosition = mb.position
+	mb.position--
+
+	if mb.position < mb.outPosition+1 {
+		mb.position = len(mb.rbs) - 1
 	}
-
-	void setDataMarkup(string a, string b) {
-		dataMarkup = [a, b];
-	}
-
-	void setCursorMarkup(string a, string b) {
-		cursorMarkup = [a, b];
-	}
-
-	void setElemAlign(int i, string halign) {
-		aligns[i] = halign;
-	}
-
-	void cursorDown() {
-		if ((_hasHead && rbs.length > 1) || (!_hasHead && rbs.length > 0)) {
-			lastPosition = position;
-
-			if (position < rbs.length - 1) {
-				position++;
-			} else {
-				position = outPosition + 1;
-			}
-
-			updateCursor();
-		}
-		writeln("down ", position);
-	}
-
-	void cursorUp() {
-		lastPosition = position;
-		position--;
-
-		if (position < outPosition + 1) position = to!int(rbs.length) - 1;
-		if (position >= 0) updateCursor();
-	}
-
-	bool cursorIsActive() {
-		if (position > outPosition) {
-			return true;
-		} else {
-			return false;
-		}
-	}
-
-	void clearCursor() {
-		if (position > outPosition) {
-			for (int i = 0; i < rbs[0].labels.length; i++) {
-				rbs[position].labels[i].setMarkup(
-					dataMarkup[0] ~ rbs[position].datax[i] ~ dataMarkup[1]);
-			}
-			position = outPosition;
-		}
-	}
-
-	string[] activeData() {
-		if (position > outPosition) {
-			return rbs[position].data;
-		} else {
-			return [];
-		}
-	}
-
-	void editActiveRow(string[] edata) {
-		writeln(edata);
-		changedMax = [];
-		auto edatax = newX(edata);
-
-		rbs[position].data = edata;
-		rbs[position].datax = edatax;
-		data[position] = edata;
-		datax[position] = edatax;
-
-		updateChanged();
-		markupActiveRow();
-	}
-
-	void deleteActiveRow() {
-		if (position > outPosition && position < rbs.length) {
-
-			rbs = rbs[0..position] ~ rbs[position + 1..$];
-			data = data[0..position] ~ data[position + 1..$];
-			datax = datax[0..position] ~ datax[position + 1..$];
-
-			removeRow(position);
-
-			for (int i = 0; i < rbs.length; i++) {
-				rbs[i].setName(to!string(i));
-			}
-
-			if (rbs.length == outPosition + 1) {
-				position = outPosition;
-			} else if (position == rbs.length) {
-				position--;
-			}
-
-			if (position > outPosition) {
-				markupActiveRow();
-			}
-		}
-	}
-
-	void reverseData() {
-		if (_hasHead) {
-			reverse(data[1..$]);
-			reverse(datax[1..$]);
-
-		} else {
-			reverse(data);
-			reverse(datax);
-		}
-
-		for (int i = outPosition + 1; i < datax.length; i++) {
-			rbs[i].data = data[i];
-			rbs[i].datax = datax[i];
-			for (int j = 0; j < rbs[i].labels.length; j++) {
-				applyMarkup(i, j, rbs[i].datax[j]);
-			}
-		}
-	}
-
-	void addRow(string[] rdata) {
-		auto rb = new RowBox(rdata, this);
-		changedMax = rb.changedMax;
-		rbs ~= rb;
-		attach(rb, 0, cast(int)datax.length, 1, 1);
-		data ~= rb.data;
-		datax ~= rb.datax;
-		updateChanged();
-	}
-
-	private void updateCursor() {
-		if (lastPosition > outPosition) {
-			for (int i = 0; i < rbs[0].labels.length; i++) {
-				rbs[lastPosition].labels[i].setMarkup(
-					dataMarkup[0] ~ rbs[lastPosition].datax[i] ~ dataMarkup[1]);
-			}
-		}
-		if (position > outPosition) {
-			for (int i = 0; i < rbs[0].labels.length; i++) {
-				rbs[position].labels[i].setMarkup(
-					cursorMarkup[0] ~ rbs[position].datax[i] ~ cursorMarkup[1]);
-			}
-		}
-	}
-
-	private void updateChanged() {
-		foreach (cm; changedMax) {
-			int j;
-			while (j < rbs.length) {
-				auto elemgr = rbs[j].data[cm].byGrapheme;
-				ulong grow = max[cm] - elemgr.walkLength;
-				auto elemx = createX(rbs[j].data[cm], cm, grow);
-
-				rbs[j].datax[cm] = elemx;
-				applyMarkup(j, cm, elemx);
-				++j;
-			}
-		}
-	}
-
-	private void markupActiveRow() {
-		for (int i = 0; i < rbs[0].labels.length; i++) {
-			rbs[position].labels[i].setMarkup(
-				cursorMarkup[0] ~ rbs[position].datax[i] ~ cursorMarkup[1]);
-		}
-	}
-
-	private string createX(string elem, int i, ulong grow) {
-		if (aligns[i] == "left") {
-			return sep ~ elem ~ " ".replicate(grow) ~ sep;
-
-		} else if (aligns[i] == "rigth") {
-			return sep ~ " ".replicate(grow) ~ elem ~ sep;
-
-		} else if (aligns[i] == "center") {
-			ulong a = grow / 2;
-			ulong b = grow / 2;
-			if (grow % 2 != 0) { b++; }
-			return sep ~ " ".replicate(a) ~ elem ~ " ".replicate(b) ~ sep;
-
-		} else {
-			return sep ~ elem ~ " ".replicate(grow) ~ sep;
-		}
-	}
-
-	private void applyMarkup(int i, int j, ref string elemx) {
-		if (_hasHead == true && i == 0) {
-			rbs[i].labels[j].setMarkup(headMarkup[0] ~ elemx ~ headMarkup[1]);
-		} else if (i == position) {
-			rbs[i].labels[j].setMarkup(cursorMarkup[0] ~ elemx ~ cursorMarkup[1]);
-		} else {
-			rbs[i].labels[j].setMarkup(dataMarkup[0] ~ elemx ~ dataMarkup[1]);
-		}
-	}
-
-	private string[] newX(string[] ndata) {
-		string[] ndatax;
-
-		for (int i = 0; i < ndata.length; i++) {
-			auto elemgr = ndata[i].byGrapheme;
-
-			if (elemgr.walkLength > max[i]) {
-				max[i] = elemgr.walkLength;
-				changedMax ~= i;
-			}
-
-			ulong grow = max[i] - elemgr.walkLength;
-			ndatax ~= createX(ndata[i], i, grow);
-		}
-
-		return ndatax;
+	if mb.position >= 0 {
+		mb.updateCursor()
 	}
 }
 
-class RowBox : Box {
-	string[] data;
-	string[] datax;
-	Label[] labels;
-	int[] changedMax;
-
-	this(string[] d, MBox mb) {
-		auto idx = cast(int) mb.rbs.length;
-		super(Orientation.HORIZONTAL, mb.hsep);
-		setName(to!string(idx));
-		data = d.dup;
-
-		//datax = mb.newX(data);
-
-		for (int i = 0; i < data.length; i++) {
-			auto elemgr = data[i].byGrapheme;
-
-			if (elemgr.walkLength > mb.max[i]) {
-				mb.max[i] = elemgr.walkLength;
-				changedMax ~= i;
-			}
-
-			ulong grow = mb.max[i] - elemgr.walkLength;
-			datax ~= mb.createX(data[i], i, grow);
-		}
-
-		foreach (ref elemx; datax) {
-			auto ebox = new EventBox();
-			add(ebox);
-			auto label = new Label(elemx);
-			label.setMarkup(mb.dataMarkup[0] ~ elemx ~ mb.dataMarkup[1]);
-			ebox.add(label);
-			labels ~= label;
-		}
-
-		addOnButtonPress(delegate bool(Event e, Widget w) {
-			auto eb = e.button();
-			auto name = getName();
-
-			if (to!int(name) > mb.outPosition) {
-				if (e.isDoubleClick(eb)) {
-					//
-				} else if (mb.position != to!int(name)) {
-					mb.lastPosition = mb.position;
-					mb.position = to!int(name);
-					mb.updateCursor();
-				}
-			} else {
-				//writeln("button pressed at header");
-			}
-			return false;
-		});
-
-		showAll();
+func (mb *MBox) CursorIsActive() bool {
+	if mb.position > mb.outPosition {
+		return true
+	} else {
+		return false
 	}
 }
-*/
+
+func (mb *MBox) ClearCursor() {
+	if mb.position > mb.outPosition {
+		for i := 0; i < len(mb.rbs[0].labels); i++ {
+			mb.rbs[mb.position].labels[i].SetMarkup(
+				mb.dataMarkup[0] + mb.rbs[mb.position].datax[i] + mb.dataMarkup[1])
+		}
+		mb.position = mb.outPosition
+	}
+}
+
+func (mb *MBox) ActiveData() []string {
+	if mb.position > mb.outPosition {
+		return mb.rbs[mb.position].data
+	} else {
+		return nil
+	}
+}
+
+func (mb *MBox) EditActiveRow(edata []string) {
+	fmt.Println(edata)
+	mb.changedMax = []int{}
+	edatax := mb.newX(edata)
+
+	mb.rbs[mb.position].data = edata
+	mb.rbs[mb.position].datax = edatax
+	mb.data[mb.position] = edata
+	mb.datax[mb.position] = edatax
+
+	mb.updateChanged()
+	mb.markupActiveRow()
+}
+
+func (mb *MBox) DeleteActiveRow() {
+	if mb.position > mb.outPosition && mb.position < len(mb.rbs) {
+
+		mb.rbs = append(mb.rbs[:mb.position], mb.rbs[mb.position+1:]...)
+		mb.data = append(mb.data[:mb.position], mb.data[mb.position+1:]...)
+		mb.datax = append(mb.datax[:mb.position], mb.datax[mb.position+1:]...)
+
+		mb.Grid.RemoveRow(mb.position)
+
+		for i := 0; i < len(mb.rbs); i++ {
+			mb.rbs[i].box.SetName(strconv.Itoa(i))
+		}
+
+		if len(mb.rbs) == mb.outPosition+1 {
+			mb.position = mb.outPosition
+		} else if mb.position == len(mb.rbs) {
+			mb.position--
+		}
+
+		if mb.position > mb.outPosition {
+			mb.markupActiveRow()
+		}
+	}
+}
+
+func (mb *MBox) ReverseData() {
+	reverse := func(a [][]string) [][]string {
+		for i := len(a)/2 - 1; i >= 0; i-- {
+			opp := len(a) - 1 - i
+			a[i], a[opp] = a[opp], a[i]
+		}
+		return a
+	}
+
+	if mb.hasHead {
+		tmp := mb.data[1:]
+		tmpx := mb.datax[1:]
+
+		tmp = reverse(tmp)
+		tmpx = reverse(tmpx)
+
+		mb.data = append(mb.data[:1], tmp...)
+		mb.datax = append(mb.datax[:1], tmpx...)
+
+		//reverse(mb.data[1:])
+		//reverse(mb.datax[1:])
+
+	} else {
+		mb.data = reverse(mb.data)
+		mb.datax = reverse(mb.datax)
+	}
+
+	for i := mb.outPosition + 1; i < len(mb.datax); i++ {
+		mb.rbs[i].data = mb.data[i]
+		mb.rbs[i].datax = mb.datax[i]
+		for j := 0; j < len(mb.rbs[i].labels); j++ {
+			mb.applyMarkup(i, j, mb.rbs[i].datax[j])
+		}
+	}
+}
+
+func (mb *MBox) AddRow(rdata []string) {
+	rb := newRowBox(rdata, mb)
+	mb.changedMax = rb.changedMax
+	mb.rbs = append(mb.rbs, rb)
+	mb.Grid.Attach(rb.box, 0, len(mb.datax), 1, 1)
+	mb.data = append(mb.data, rb.data)
+	mb.datax = append(mb.datax, rb.datax)
+	mb.updateChanged()
+}
+
+func (mb *MBox) updateCursor() {
+	if mb.lastPosition > mb.outPosition {
+		for i := 0; i < len(mb.rbs[0].labels); i++ {
+			mb.rbs[mb.lastPosition].labels[i].SetMarkup(
+				mb.dataMarkup[0] + mb.rbs[mb.lastPosition].datax[i] + mb.dataMarkup[1])
+		}
+	}
+
+	if mb.position > mb.outPosition {
+		for i := 0; i < len(mb.rbs[0].labels); i++ {
+			mb.rbs[mb.position].labels[i].SetMarkup(
+				mb.cursorMarkup[0] + mb.rbs[mb.position].datax[i] + mb.cursorMarkup[1])
+		}
+	}
+}
+
+func (mb *MBox) updateChanged() {
+	for _, cm := range mb.changedMax {
+		for j := range mb.rbs {
+			grow := mb.max[cm] - utf8.RuneCountInString(mb.rbs[j].data[cm])
+			elemx := mb.createX(mb.rbs[j].data[cm], cm, grow)
+
+			mb.rbs[j].datax[cm] = elemx
+			mb.applyMarkup(j, cm, elemx)
+		}
+	}
+}
+
+func (mb *MBox) markupActiveRow() {
+	for i := 0; i < len(mb.rbs[0].labels); i++ {
+		mb.rbs[mb.position].labels[i].SetMarkup(
+			mb.cursorMarkup[0] + mb.rbs[mb.position].datax[i] + mb.cursorMarkup[1])
+	}
+}
+
+func (mb *MBox) createX(elem string, i, grow int) string {
+	if mb.aligns[i] == "left" {
+		return mb.sep + elem + strings.Repeat(" ", grow) + mb.sep
+
+	} else if mb.aligns[i] == "rigth" {
+		return mb.sep + strings.Repeat(" ", grow) + elem + mb.sep
+
+	} else if mb.aligns[i] == "center" {
+		a := grow / 2
+		b := grow / 2
+		if grow%2 != 0 {
+			b++
+		}
+		return mb.sep + strings.Repeat(" ", a) + elem + strings.Repeat(" ", b) + mb.sep
+	} else {
+		return mb.sep + elem + strings.Repeat(" ", grow) + mb.sep
+	}
+}
+
+func (mb *MBox) applyMarkup(i, j int, elemx string) {
+	if mb.hasHead == true && i == 0 {
+		mb.rbs[i].labels[j].SetMarkup(mb.headMarkup[0] + elemx + mb.headMarkup[1])
+	} else if i == mb.position {
+		mb.rbs[i].labels[j].SetMarkup(mb.cursorMarkup[0] + elemx + mb.cursorMarkup[1])
+	} else {
+		mb.rbs[i].labels[j].SetMarkup(mb.dataMarkup[0] + elemx + mb.dataMarkup[1])
+	}
+}
+
+func (mb *MBox) newX(ndata []string) []string {
+	var ndatax []string
+
+	for i := 0; i < len(ndata); i++ {
+		nrunes := utf8.RuneCountInString(ndata[i])
+
+		if nrunes > mb.max[i] {
+			mb.max[i] = nrunes
+			mb.changedMax = append(mb.changedMax, i)
+		}
+
+		grow := mb.max[i] - nrunes
+		ndatax = append(ndatax, mb.createX(ndata[i], i, grow))
+	}
+
+	return ndatax
+}
+
+type RowBox struct {
+	data       []string
+	datax      []string
+	labels     []*gtk.Label
+	changedMax []int
+	box        *gtk.Box
+}
+
+func newRowBox(d []string, mb *MBox) RowBox {
+	var rb RowBox
+	idx := len(mb.rbs)
+
+	rb.box, _ = gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, mb.hsep)
+	rb.box.SetName(strconv.Itoa(idx))
+	rb.data = d
+
+	//rb.datax = mb.newX(rb.data)
+
+	for i := 0; i < len(rb.data); i++ {
+		drunes := utf8.RuneCountInString(rb.data[i])
+
+		if drunes > mb.max[i] {
+			mb.max[i] = drunes
+			rb.changedMax = append(rb.changedMax, i)
+		}
+
+		grow := mb.max[i] - drunes
+		rb.datax = append(rb.datax, mb.createX(rb.data[i], i, grow))
+	}
+
+	for _, elemx := range rb.datax {
+		ebox, _ := gtk.EventBoxNew()
+		rb.box.Add(ebox)
+		label, _ := gtk.LabelNew(elemx)
+		label.SetMarkup(mb.dataMarkup[0] + elemx + mb.dataMarkup[1])
+		ebox.Add(label)
+		rb.labels = append(rb.labels, label)
+	}
+
+	rb.box.Connect("button-press-event", func(_ *gtk.Box, e *gdk.Event) bool {
+		//eb := e.Button()
+		name, _ := rb.box.GetName()
+		namint, _ := strconv.Atoi(name)
+		fmt.Println(namint)
+
+		if namint > mb.outPosition {
+			//if e.IsDoubleClick(eb) {
+			//
+			//} else if mb.position != namint {
+			mb.lastPosition = mb.position
+			mb.position = namint
+			mb.updateCursor()
+			//}
+		} else {
+			fmt.Println("button pressed at header")
+		}
+		return false
+	})
+
+	rb.box.ShowAll()
+	return rb
+}

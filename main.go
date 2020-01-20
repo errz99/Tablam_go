@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
+	"strconv"
+	"time"
 
-	//"github.com/gotk3/gotk3/gdk"
+	"github.com/gotk3/gotk3/gdk"
 	"github.com/gotk3/gotk3/gtk"
 	mb "mBoxGo/mbox"
 )
-
 
 const hma string = "<span foreground=\"black\" background=\"white\" size=\"medium\"><tt><b>"
 const hmb string = "</b></tt></span>"
@@ -17,6 +19,7 @@ const cma string = "<span foreground=\"black\" background=\"yellow\" size=\"medi
 const cmb string = "</tt></span>"
 
 func main() {
+	rand.Seed(time.Now().UnixNano())
 
 	mbData := [][]string{
 		{"Date", "Name", "URL", "Info"},
@@ -27,164 +30,127 @@ func main() {
 
 	gtk.Init(nil)
 
-		fmt.Println(mbData)
-		
-		mbox := mb.NewMBox(mbData, true, []string{" "})
-		
-		fmt.Println(mbox)
+	mainWin(mbData)
 
 	gtk.Main()
 
 }
 
+func mainWin(mbData [][]string) {
+	mwin, _ := gtk.WindowNew(gtk.WINDOW_TOPLEVEL)
+	mwin.SetTitle("mBoxGo Test")
+	mwin.SetDefaultSize(600, 400)
 
-/*
-void main(string[] args) {
+	mwin.Connect("destroy", func() {
+		gtk.MainQuit()
+	})
 
-	string[][] mbData = [
-		["Date", "Name", "URL", "Info"],
-		["20190904", "Vodafone", "www.vodafone.com", "Mi cuenta en la web de Vodafone"],
-		["20191001", "micuenta", "gmail.com", "Cuenta de correo en gmail"],
-		["20190522", "BNK", "www.banco.com", "Pues eso, el banco y tal"],
-		["20181105", "García", "www.zaragoza.es", "Ejemplo con tilde, y alguna cosilla"]];
+	vbox, _ := gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 0)
+	mwin.Add(vbox)
 
-	MainWin mwin;
+	headText, _ := gtk.LabelNew("Ejemplo")
+	headText.SetMarkup("<span foreground=\"green\"><b>Ejemplo</b></span>")
+	headText.SetMarginTop(8)
+	vbox.Add(headText)
 
-	Main.init(args);
+	aligns := []string{"rigth", "left", "center", "left"}
+	mbox := mb.NewMBox(mbData, true, aligns)
+	mbox.SetCursorMarkup(cma, cmb)
+	vbox.Add(mbox.Grid)
 
-	mwin = new MainWin(mbData);
+	close, _ := gtk.ButtonNewWithLabel("Close")
+	vbox.PackEnd(close, false, false, 0)
+	close.SetCanFocus(false)
 
-	Main.run();
+	close.Connect("clicked", func() {
+		gtk.MainQuit()
+	})
 
-}
+	mwin.Connect("key-press-event", func(_ *gtk.Window, event *gdk.Event) {
+		eventKey := gdk.EventKeyNewFromEvent(event)
+		kval := eventKey.KeyVal()
 
-class MainWin : MainWindow {
-	Keymap keymap;
-	MBox mbox;
-	auto rnd = Random(42);
+		switch kval {
+		case gdk.KEY_Up:
+			mbox.CursorUp()
 
-	this(string[][] mbData) {
-		super("mBox Test");
-		addOnDestroy(delegate void(Widget w) { mainQuit(); });
+		case gdk.KEY_Down:
+			mbox.CursorDown()
 
-		setDefaultSize(600, 400);
-		keymap = Keymap.getDefault();
-		addOnKeyPress(&onKeyPress);
-
-		auto aligns = ["rigth", "left", "center", "left"];
-		mbox = new MBox(mbData, true, aligns);
-		mbox.setCursorMarkup(cma, cmb);
-
-		addOnScroll(delegate bool(Event e, Widget w) {
-			writeln("scroll event");
-			return true;
-		});
-
-		mbox.addOnButtonPress(delegate bool(Event e, Widget w) {
-			auto eb = e.button();
-
-			if (e.isDoubleClick(eb)) {
-				writeln("mbox double check: get row data");
-				if (mbox.activeData() != []) {
-					writeln(mbox.activeData());
-				} else {
-					writeln("no data active");
-				}
-
+		case gdk.KEY_Escape:
+			if mbox.CursorIsActive() {
+				mbox.ClearCursor()
 			} else {
-				//writeln("mbox single check: get position");
+				gtk.MainQuit()
 			}
-			return true;
-		});
 
-		add(new MainBox(mbData, mbox, this));
-		showAll();
-	}
+		case gdk.KEY_Return:
+			if mbox.ActiveData() != nil {
+				fmt.Println(mbox.ActiveData())
+			} else {
+				fmt.Println("no data active")
+			}
 
-	void mainQuit() {
-		Main.quit();
-		writeln("Bye.");
-	}
+		case gdk.KEY_Delete:
+			mbox.DeleteActiveRow()
 
-	bool onKeyPress(GdkEventKey* eventKey, Widget widget) {
-		string key = keymap.keyvalName(eventKey.keyval);
+		case gdk.KEY_Insert:
+			mbox.AddRow(modify([]string{"20190101", "Mi veloz router",
+				"www.here.com", "Acceso all router de casa"}))
 
-		switch (key) {
-			case "Up":
-				mbox.cursorUp();
-				break;
-			case "Down":
-				mbox.cursorDown();
-				break;
-			case "Escape":
-				if (mbox.cursorIsActive()) {
-					mbox.clearCursor();
-				} else {
-					mainQuit();
-				}
-				break;
-			case "Return":
-				if (mbox.activeData() != []) {
-					writeln(mbox.activeData());
-				} else {
-					writeln("no data active");
-				}
-				break;
-			case "Delete":
-				mbox.deleteActiveRow();
-				break;
-			case "Insert":
-				mbox.addRow(modify(["20190101", "Mi veloz router",
-					"www.here.com", "Acceso all router de casa"]));
-				break;
-			case "F12":
-				mbox.reverseData();
-				break;
-			case "e":
-				if (eventKey.state & ModifierType.CONTROL_MASK) {
-					auto toEdit = mbox.activeData();
-					if ( toEdit != []) {
-						auto edited = modify(toEdit);
-						mbox.editActiveRow(edited);
-					}
-				}
-				break;
-			default:
-				writeln("New: ", key);
-				break;
+		case gdk.KEY_F12:
+			mbox.ReverseData()
+
+		case gdk.KEY_e:
+			//if eventKey.state & ModifierType.CONTROL_MASK) {
+			toEdit := mbox.ActiveData()
+			if toEdit != nil {
+				edited := modify(toEdit)
+				mbox.EditActiveRow(edited)
+			}
+			//}
+
+		default:
 		}
+	})
 
-		return true;
-	}
+	mwin.Connect("scroll-event", func(_ *gtk.Window, event *gdk.Event) {
+		fmt.Println("scroll event")
+	})
 
-	private string[] modify(string[] str) {
-		auto r = uniform(0, 255, rnd);
-		auto y = uniform(2000, 2020, rnd);
-		auto m = uniform(1, 13, rnd);
-		auto d = uniform(1, 29, rnd);
-		auto date = to!string(y) ~ "/" ~ to!string(m) ~ "/" ~ to!string(d);
-		auto url = "www." ~ to!string(r) ~ ".com";
-		str[0] = date;
-		str[2] = url;
-		return str;
-	}
+	mwin.Connect("button-press-event", func(_ *gtk.Window, event *gdk.Event) {
+		fmt.Println("button press event")
+
+		//		auto eb = e.button();
+		//
+		//		if (e.isDoubleClick(eb)) {
+		//			writeln("mbox double check: get row data");
+		//			if (mbox.activeData() != []) {
+		//				writeln(mbox.activeData());
+		//			} else {
+		//				writeln("no data active");
+		//			}
+		//
+		//		} else {
+		//			//writeln("mbox single check: get position");
+		//		}
+		//		return true;
+
+	})
+
+	mwin.ShowAll()
 }
 
-class MainBox : Box {
-	this(string[][] mbData, MBox mbox, MainWin mwin) {
-		super(Orientation.VERTICAL, 0);
+func modify(str []string) []string {
+	r := rand.Intn(255)
+	y := rand.Intn(2020-2000) + 2000
+	m := rand.Intn(13-1) + 1
+	d := rand.Intn(29-1) + 1
 
-		auto headText = new Label("Ejemplo");
-		headText.setMarkup("<span foreground=\"green\"><b>Ejemplo</b></span>");
-		headText.setMarginTop(8);
-		add(headText);
+	date := strconv.Itoa(y) + "/" + strconv.Itoa(m) + "/" + strconv.Itoa(d)
+	url := "www." + strconv.Itoa(r) + ".com"
+	str[0] = date
+	str[2] = url
 
-		add(mbox);
-
-		auto close = new Button("Close");
-		packEnd(close, false, false, 0);
-
-		close.addOnClicked(delegate void(Button b) { mwin.mainQuit(); });
-	}
+	return str
 }
-*/
