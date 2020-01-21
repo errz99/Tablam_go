@@ -40,6 +40,13 @@ func mainWin(mbData [][]string) {
 	mwin.SetTitle("mBoxGo Test")
 	mwin.SetDefaultSize(600, 400)
 
+	mwinCss := "window { font-size: 15px; }"
+	provider, _ := gtk.CssProviderNew()
+	provider.LoadFromData(mwinCss)
+
+	context, _ := mwin.GetStyleContext()
+	context.AddProvider(provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
 	mwin.Connect("destroy", func() {
 		gtk.MainQuit()
 	})
@@ -56,6 +63,9 @@ func mainWin(mbData [][]string) {
 	tab := tb.NewTablam(mbData, true, aligns)
 	tab.SetCursorMarkup(cma, cmb)
 	vbox.Add(tab.Grid)
+
+	gridContext, _ := tab.Grid.GetStyleContext()
+	gridContext.AddProvider(provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
 	close, _ := gtk.ButtonNewWithLabel("Close")
 	vbox.PackEnd(close, false, false, 0)
