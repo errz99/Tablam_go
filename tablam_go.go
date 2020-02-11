@@ -1,7 +1,8 @@
 package mbox
 
 import (
-	"fmt"
+	"errors"
+	//"fmt"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -16,374 +17,472 @@ const dma string = "<span background=\"white\"><tt>"
 const dmb string = "</tt></span>"
 const cma string = "<span foreground=\"white\" background=\"#6666dd\"><tt>"
 const cmb string = "</tt></span>"
+const OUTPOS int = -1
+
+// Global vars
+var headMarkup = [2]string{hma, hmb}
+var dataMarkup = [2]string{dma, dmb}
+var cursorMarkup = [2]string{cma, cmb}
+
+var RowSep = 2
+var ColumnSep = 2
+var LeftRightMargin = 1
+
+var cursorPosition = OUTPOS
+var lastPosition = OUTPOS
+
+// Functions
+func generateX(elem, align string, grow int) string {
+	if grow < 0 {
+		grow = 0
+	}
+
+	sep := strings.Repeat(" ", LeftRightMargin)
+
+	if align == "left" {
+		return sep + elem + strings.Repeat(" ", grow) + sep
+
+	} else if align == "rigth" {
+		return sep + strings.Repeat(" ", grow) + elem + sep
+
+	} else if align == "center" {
+		a := grow / 2
+		b := grow / 2
+		if grow%2 != 0 {
+			b++
+		}
+		return sep + strings.Repeat(" ", a) + elem + strings.Repeat(" ", b) + sep
+	} else {
+		return sep + elem + strings.Repeat(" ", grow) + sep
+	}
+}
+
+func updateColsWidth(elems *[]string, colsWidth *[]int) {
+	for i := 0; i < len(*elems); i++ {
+		if len(*colsWidth) < len(*elems) {
+			*colsWidth = append(*colsWidth, 0)
+		}
+		if (*colsWidth)[i] < utf8.RuneCountInString((*elems)[i]) {
+			(*colsWidth)[i] = utf8.RuneCountInString((*elems)[i])
+		}
+	}
+}
+
+func defaultAligns(n int) []string {
+	var aligns []string
+
+	for i := 0; i < n; i++ {
+		aligns = append(aligns, "left")
+	}
+
+	return aligns
+}
+
+// Head
+type HeadItem struct {
+	Name     string
+	Namex    string
+	Align    string
+	EventBox *gtk.EventBox
+	Label    *gtk.Label
+}
+
+func NewHeadItem(name string, width int, align string) HeadItem {
+	grow := width - utf8.RuneCountInString(name)
+	namex := generateX(name, align, grow)
+
+	ebox, _ := gtk.EventBoxNew()
+	label, _ := gtk.LabelNew(name)
+	label.SetMarkup(headMarkup[0] + namex + headMarkup[1])
+	ebox.Add(label)
+
+	return HeadItem{name, namex, align, ebox, label}
+}
+
+func (hi *HeadItem) SetAlign(align string) {
+	hi.Align = align
+	grow := utf8.RuneCountInString(hi.Namex) -
+		utf8.RuneCountInString(hi.Name) - (LeftRightMargin * 2)
+
+	hi.Namex = generateX(hi.Name, hi.Align, grow)
+	hi.Label.SetMarkup(headMarkup[0] + hi.Namex + headMarkup[1])
+}
+
+func (hi *HeadItem) refreshWidth(width int) {
+	grow := width - utf8.RuneCountInString(hi.Name)
+	hi.Namex = generateX(hi.Name, hi.Align, grow)
+	hi.Label.SetMarkup(headMarkup[0] + hi.Namex + headMarkup[1])
+}
+
+type Header struct {
+	Items []HeadItem
+	Box   *gtk.Box
+}
+
+func NewHeader(names []string, widths []int, aligns []string) Header {
+	var items []HeadItem
+	box, _ := gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, ColumnSep)
+	box.SetMarginBottom(RowSep)
+
+	for i, name := range names {
+		items = append(items, NewHeadItem(name, widths[i], aligns[i]))
+	}
+
+	for _, item := range items {
+		box.Add(item.EventBox)
+	}
+
+	return Header{items, box}
+}
+
+func (h *Header) reset() {
+	for i := 0; i < len(h.Items); i++ {
+		h.Items[i].refreshWidth(0)
+	}
+}
+
+// Tablam
+type DataItem struct {
+	Name     string
+	Namex    string
+	Align    string
+	EventBox *gtk.EventBox
+	Label    *gtk.Label
+}
+
+func NewDataItem(name string, width int, align string) DataItem {
+	grow := width - utf8.RuneCountInString(name)
+	namex := generateX(name, align, grow)
+
+	ebox, _ := gtk.EventBoxNew()
+	label, _ := gtk.LabelNew(namex)
+	label.SetMarkup(dataMarkup[0] + namex + dataMarkup[1])
+	ebox.Add(label)
+
+	return DataItem{name, namex, align, ebox, label}
+}
+
+func (di *DataItem) refreshWidth(width int) {
+	grow := width - utf8.RuneCountInString(di.Name)
+	di.Namex = generateX(di.Name, di.Align, grow)
+	di.Label.SetMarkup(dataMarkup[0] + di.Namex + dataMarkup[1])
+}
+
+func (di *DataItem) edit(name string, width int) (bool, int) {
+	var changed bool
+	di.Name = name
+
+	nwidth := utf8.RuneCountInString(di.Name)
+	if nwidth > width {
+		width = nwidth
+		changed = true
+	}
+
+	grow := width - nwidth
+	di.Namex = generateX(di.Name, di.Align, grow)
+	di.Label.SetMarkup(cursorMarkup[0] + di.Namex + cursorMarkup[1])
+
+	return changed, nwidth
+}
+
+type RowBox2 struct {
+	Items []DataItem
+	Box   *gtk.Box
+}
+
+func NewRowBox2(id int, items []DataItem, t *Tablam) RowBox2 {
+	var rb = RowBox2{items, nil}
+
+	rb.Box, _ = gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, ColumnSep)
+	rb.Box.SetName(strconv.Itoa(id))
+
+	for _, item := range rb.Items {
+		rb.Box.Add(item.EventBox)
+	}
+
+	rb.Box.Connect("button-press-event", func(box *gtk.Box, e *gdk.Event) bool {
+		name, _ := box.GetName()
+		namint, _ := strconv.Atoi(name)
+		lastPosition = cursorPosition
+		cursorPosition = namint
+
+		t.updateCursor()
+		return false
+	})
+
+	rb.Box.ShowAll()
+	return rb
+}
 
 type Tablam struct {
-	hasHead      bool
-	rbs          []RowBox
-	data         [][]string
-	datax        [][]string
-	position     int
-	outPosition  int
-	lastPosition int
-	headMarkup   [2]string
-	dataMarkup   [2]string
-	cursorMarkup [2]string
-	hsep         int
-	max          []int
-	changedMax   []int
-	separation   int
-	sep          string
-	aligns       []string
-	Grid         *gtk.Grid
+	head        Header
+	rows        []RowBox2
+	colsWidth   []int
+	colsChanged []int
+	aligns      []string
+	Grid        *gtk.Grid
+	Box         *gtk.Box
 }
 
-func NewTablam(data [][]string, hasHead bool, aligns []string) Tablam {
-	grid, _ := gtk.GridNew()
+func NewTablam(titles, aligns []string) Tablam {
+	var head Header
 
-	var mbox = Tablam{
-		hasHead,
+	var t = Tablam{
+		head,
 		nil,
 		nil,
 		nil,
-		0,
-		-1,
-		-1,
-		[2]string{hma, hmb},
-		[2]string{dma, dmb},
-		[2]string{cma, cmb},
-		3,
+		aligns,
 		nil,
 		nil,
-		1,
-		" ",
-		nil,
-		grid,
 	}
 
-	if mbox.hasHead == true {
-		mbox.outPosition++
+	updateColsWidth(&titles, &t.colsWidth)
+
+	if t.aligns == nil && t.colsWidth != nil {
+		t.aligns = defaultAligns(len(t.colsWidth))
 	}
 
-	mbox.position = mbox.outPosition
-	mbox.lastPosition = mbox.outPosition
-	mbox.sep = strings.Repeat(" ", mbox.separation)
-	mbox.max = make([]int, len(data[0]))
+	t.Box, _ = gtk.BoxNew(gtk.ORIENTATION_VERTICAL, 0)
+	t.Box.SetHAlign(gtk.ALIGN_CENTER)
 
-	if aligns == nil {
-		for range data[0] {
-			mbox.aligns = append(mbox.aligns, "right")
-		}
-	} else {
-		mbox.aligns = aligns
+	t.Grid, _ = gtk.GridNew()
+	t.Grid.SetHAlign(gtk.ALIGN_CENTER)
+	t.Grid.SetRowSpacing(uint(RowSep))
+
+	if titles != nil {
+		t.head = NewHeader(titles, t.colsWidth, t.aligns)
+		t.Box.Add(t.head.Box)
 	}
+	t.Box.Add(t.Grid)
 
-	grid.SetHAlign(gtk.ALIGN_CENTER)
-	grid.SetBorderWidth(8)
-	grid.SetRowSpacing(uint(mbox.hsep))
-
-	for _, d := range data {
-		mbox.AddRow(d)
-	}
-
-	return mbox
+	return t
 }
 
-func (t *Tablam) SetHeadMarkup(a, b string) {
-	t.headMarkup = [2]string{a, b}
-}
+func (t *Tablam) CursorDown() int {
+	if len(t.rows) > 0 {
+		lastPosition = cursorPosition
 
-func (t *Tablam) SetDataMarkup(a, b string) {
-	t.dataMarkup = [2]string{a, b}
-}
-
-func (t *Tablam) SetCursorMarkup(a, b string) {
-	t.cursorMarkup = [2]string{a, b}
-}
-
-func (t *Tablam) SetElemAlign(i int, halign string) {
-	t.aligns[i] = halign
-}
-
-func (t *Tablam) CursorDown() {
-	if (t.hasHead == true && len(t.rbs) > 1) || (t.hasHead == false && len(t.rbs) > 0) {
-		t.lastPosition = t.position
-
-		if t.position < len(t.rbs)-1 {
-			t.position++
+		if cursorPosition < len(t.rows)-1 {
+			cursorPosition++
 		} else {
-			t.position = t.outPosition + 1
+			cursorPosition = 0
 		}
 
 		t.updateCursor()
 	}
 
-	fmt.Println("down", t.position)
+	return cursorPosition
 }
 
-func (t *Tablam) CursorUp() {
-	t.lastPosition = t.position
-	t.position--
+func (t *Tablam) CursorUp() int {
+	lastPosition = cursorPosition
+	cursorPosition--
 
-	if t.position < t.outPosition+1 {
-		t.position = len(t.rbs) - 1
+	if cursorPosition < 0 {
+		cursorPosition = len(t.rows) - 1
 	}
-	if t.position >= 0 {
+	if cursorPosition >= 0 {
 		t.updateCursor()
+	}
+
+	return cursorPosition
+}
+
+func (t *Tablam) updateCursor() {
+	if lastPosition > OUTPOS {
+		for i := 0; i < len(t.rows[0].Items); i++ {
+			t.rows[lastPosition].Items[i].Label.SetMarkup(  // index out of range
+				dataMarkup[0] + t.rows[lastPosition].Items[i].Namex + dataMarkup[1])
+		}
+	}
+
+	if cursorPosition >= OUTPOS {
+		for i := 0; i < len(t.rows[0].Items); i++ {
+			t.rows[cursorPosition].Items[i].Label.SetMarkup(
+				cursorMarkup[0] + t.rows[cursorPosition].Items[i].Namex + cursorMarkup[1])
+		}
+	}
+}
+
+func (t *Tablam) markupActiveRow() {
+	for i := 0; i < len(t.rows[0].Items); i++ {
+		t.rows[cursorPosition].Items[i].Label.SetMarkup(
+			cursorMarkup[0] + t.rows[cursorPosition].Items[i].Namex + cursorMarkup[1])
+	}
+}
+
+func (t *Tablam) SetHeadAligns(aligns []string) error {
+	if t.head.Items != nil {
+		for i, align := range aligns {
+			t.head.Items[i].SetAlign(align)
+		}
+		return nil
+
+	} else {
+		return errors.New("Header not defined")
+	}
+}
+
+func (t *Tablam) AddRow(rdata []string) {
+	if t.head.Items == nil && t.rows == nil {
+		updateColsWidth(&rdata, &t.colsWidth)
+
+		if t.aligns == nil {
+			t.aligns = defaultAligns(len(t.colsWidth))
+		}
+	}
+
+	var rowItems []DataItem
+
+	for i, elem := range rdata {
+		rowItems = append(rowItems, NewDataItem(elem, t.colsWidth[i], t.aligns[i]))
+	}
+
+	row := NewRowBox2(len(t.rows), rowItems, t)
+	t.Grid.Attach(row.Box, 0, len(t.rows), 1, 1)
+	t.rows = append(t.rows, row)
+
+	t.colsChanged = []int{}
+
+	for i, rd := range rdata {
+		drunes := utf8.RuneCountInString(rd)
+
+		if drunes > t.colsWidth[i] {
+			t.colsWidth[i] = drunes
+			t.colsChanged = append(t.colsChanged, i)
+		}
+	}
+
+	t.refreshLabels()
+
+	if cursorPosition > OUTPOS && cursorPosition < len(t.rows) {
+		t.updateCursor()
+	}
+}
+
+func (t *Tablam) EditActiveRow(edata []string) {
+	t.colsChanged = nil
+
+	for i := 0; i < len(t.rows[cursorPosition].Items); i++ {
+		changed, nwidth := t.rows[cursorPosition].Items[i].edit(edata[i], t.colsWidth[i])
+
+		if changed {
+			t.colsWidth[i] = nwidth
+			t.colsChanged = append(t.colsChanged, i)
+		}
+	}
+
+	t.refreshLabels()
+
+	if cursorPosition > OUTPOS {
+		t.updateCursor()
+	}
+}
+
+func (t *Tablam) DeleteActiveRow() {
+	if cursorPosition > OUTPOS {
+
+		t.rows = append(t.rows[:cursorPosition], t.rows[cursorPosition+1:]...)
+		t.Grid.RemoveRow(cursorPosition)
+
+		if len(t.rows) == OUTPOS+1 {
+			cursorPosition = OUTPOS
+		} else if cursorPosition == len(t.rows) {
+			cursorPosition--
+		}
+
+		if cursorPosition > OUTPOS {
+			t.markupActiveRow()
+			t.UpdateBoxNames()
+		}
+	}
+}
+
+func (t *Tablam) DeleteAll() {
+	if len(t.rows) > 0 {
+
+		for i := 0; i < len(t.rows); i++ {
+			t.Grid.RemoveRow(0)
+		}
+
+		t.rows = []RowBox2{}
+		cursorPosition = OUTPOS
+		lastPosition = OUTPOS
+
+		for i := 0; i < len(t.colsWidth); i++ {
+			t.colsWidth[i] = 0
+		}
+
+		t.colsChanged = []int{}
+		t.head.reset()
+	}
+}
+
+func (t *Tablam) refreshLabels() {
+	for _, n := range t.colsChanged {
+		if t.head.Items != nil {
+			t.head.Items[n].refreshWidth(t.colsWidth[n])
+		}
+
+		for i := 0; i < len(t.rows); i++ {
+			t.rows[i].Items[n].refreshWidth(t.colsWidth[n])
+		}
 	}
 }
 
 func (t *Tablam) CursorIsActive() bool {
-	if t.position > t.outPosition {
+	if cursorPosition > OUTPOS {
 		return true
 	} else {
 		return false
 	}
 }
 
-func (t *Tablam) ClearCursor() {
-	if t.position > t.outPosition {
-		for i := 0; i < len(t.rbs[0].labels); i++ {
-			t.rbs[t.position].labels[i].SetMarkup(
-				t.dataMarkup[0] + t.rbs[t.position].datax[i] + t.dataMarkup[1])
+func (t *Tablam) ClearCursor() int {
+	if cursorPosition > OUTPOS {
+		for i := 0; i < len(t.rows[0].Items); i++ {
+			t.rows[cursorPosition].Items[i].Label.SetMarkup(
+				dataMarkup[0] + t.rows[cursorPosition].Items[i].Namex + dataMarkup[1])
 		}
-		t.position = t.outPosition
+		cursorPosition = OUTPOS
 	}
+
+	return cursorPosition
 }
 
 func (t *Tablam) ActiveData() []string {
-	if t.position > t.outPosition {
-		return t.rbs[t.position].data
+	if cursorPosition > OUTPOS {
+		var rowData []string
+
+		for _, item := range t.rows[cursorPosition].Items {
+			rowData = append(rowData, item.Name)
+		}
+		return rowData
+
 	} else {
 		return nil
 	}
 }
 
-func (t *Tablam) EditActiveRow(edata []string) {
-	fmt.Println(edata)
-	t.changedMax = []int{}
-	edatax := t.newX(edata)
-
-	t.rbs[t.position].data = edata
-	t.rbs[t.position].datax = edatax
-	t.data[t.position] = edata
-	t.datax[t.position] = edatax
-
-	t.updateChanged()
-	t.markupActiveRow()
-}
-
-func (t *Tablam) DeleteActiveRow() {
-	if t.position > t.outPosition && t.position < len(t.rbs) {
-
-		t.rbs = append(t.rbs[:t.position], t.rbs[t.position+1:]...)
-		t.data = append(t.data[:t.position], t.data[t.position+1:]...)
-		t.datax = append(t.datax[:t.position], t.datax[t.position+1:]...)
-
-		t.Grid.RemoveRow(t.position)
-
-		for i := 0; i < len(t.rbs); i++ {
-			t.rbs[i].box.SetName(strconv.Itoa(i))
-		}
-
-		if len(t.rbs) == t.outPosition+1 {
-			t.position = t.outPosition
-		} else if t.position == len(t.rbs) {
-			t.position--
-		}
-
-		if t.position > t.outPosition {
-			t.markupActiveRow()
-		}
+func (t *Tablam) UpdateBoxNames() {
+	for i := 0; i < len(t.rows); i++ {
+		t.rows[i].Box.SetName(strconv.Itoa(i))
 	}
 }
 
-func (t *Tablam) ReverseData() {
-	reverse := func(a [][]string) [][]string {
-		for i := len(a)/2 - 1; i >= 0; i-- {
-			opp := len(a) - 1 - i
-			a[i], a[opp] = a[opp], a[i]
-		}
-		return a
-	}
-
-	if t.hasHead {
-		tmp := t.data[1:]
-		tmpx := t.datax[1:]
-
-		tmp = reverse(tmp)
-		tmpx = reverse(tmpx)
-
-		t.data = append(t.data[:1], tmp...)
-		t.datax = append(t.datax[:1], tmpx...)
-
-		//reverse(t.data[1:])
-		//reverse(t.datax[1:])
-
-	} else {
-		t.data = reverse(t.data)
-		t.datax = reverse(t.datax)
-	}
-
-	for i := t.outPosition + 1; i < len(t.datax); i++ {
-		t.rbs[i].data = t.data[i]
-		t.rbs[i].datax = t.datax[i]
-		for j := 0; j < len(t.rbs[i].labels); j++ {
-			t.applyMarkup(i, j, t.rbs[i].datax[j])
-		}
-	}
+func (t Tablam) SetHeadMarkup(a, b string) {
+	headMarkup = [2]string{a, b}
 }
 
-func (t *Tablam) AddRow(rdata []string) {
-	rb := newRowBox(rdata, t)
-	t.changedMax = rb.changedMax
-	t.rbs = append(t.rbs, rb)
-	t.Grid.Attach(rb.box, 0, len(t.datax), 1, 1)
-	t.data = append(t.data, rb.data)
-	t.datax = append(t.datax, rb.datax)
-	t.updateChanged()
+func (t Tablam) SetDataMarkup(a, b string) {
+	headMarkup = [2]string{a, b}
 }
 
-func (t *Tablam) updateCursor() {
-	if t.lastPosition > t.outPosition {
-		for i := 0; i < len(t.rbs[0].labels); i++ {
-			t.rbs[t.lastPosition].labels[i].SetMarkup(
-				t.dataMarkup[0] + t.rbs[t.lastPosition].datax[i] + t.dataMarkup[1])
-		}
-	}
-
-	if t.position > t.outPosition {
-		for i := 0; i < len(t.rbs[0].labels); i++ {
-			t.rbs[t.position].labels[i].SetMarkup(
-				t.cursorMarkup[0] + t.rbs[t.position].datax[i] + t.cursorMarkup[1])
-		}
-	}
+func (t Tablam) SetCursorMarkup(a, b string) {
+	cursorMarkup = [2]string{a, b}
 }
 
-func (t *Tablam) updateChanged() {
-	for _, cm := range t.changedMax {
-		for j := range t.rbs {
-			grow := t.max[cm] - utf8.RuneCountInString(t.rbs[j].data[cm])
-			elemx := t.createX(t.rbs[j].data[cm], cm, grow)
-
-			t.rbs[j].datax[cm] = elemx
-			t.applyMarkup(j, cm, elemx)
-		}
-	}
-}
-
-func (t *Tablam) markupActiveRow() {
-	for i := 0; i < len(t.rbs[0].labels); i++ {
-		t.rbs[t.position].labels[i].SetMarkup(
-			t.cursorMarkup[0] + t.rbs[t.position].datax[i] + t.cursorMarkup[1])
-	}
-}
-
-func (t *Tablam) createX(elem string, i, grow int) string {
-	if t.aligns[i] == "left" {
-		return t.sep + elem + strings.Repeat(" ", grow) + t.sep
-
-	} else if t.aligns[i] == "rigth" {
-		return t.sep + strings.Repeat(" ", grow) + elem + t.sep
-
-	} else if t.aligns[i] == "center" {
-		a := grow / 2
-		b := grow / 2
-		if grow%2 != 0 {
-			b++
-		}
-		return t.sep + strings.Repeat(" ", a) + elem + strings.Repeat(" ", b) + t.sep
-	} else {
-		return t.sep + elem + strings.Repeat(" ", grow) + t.sep
-	}
-}
-
-func (t *Tablam) applyMarkup(i, j int, elemx string) {
-	if t.hasHead == true && i == 0 {
-		t.rbs[i].labels[j].SetMarkup(t.headMarkup[0] + elemx + t.headMarkup[1])
-	} else if i == t.position {
-		t.rbs[i].labels[j].SetMarkup(t.cursorMarkup[0] + elemx + t.cursorMarkup[1])
-	} else {
-		t.rbs[i].labels[j].SetMarkup(t.dataMarkup[0] + elemx + t.dataMarkup[1])
-	}
-}
-
-func (t *Tablam) newX(ndata []string) []string {
-	var ndatax []string
-
-	for i := 0; i < len(ndata); i++ {
-		nrunes := utf8.RuneCountInString(ndata[i])
-
-		if nrunes > t.max[i] {
-			t.max[i] = nrunes
-			t.changedMax = append(t.changedMax, i)
-		}
-
-		grow := t.max[i] - nrunes
-		ndatax = append(ndatax, t.createX(ndata[i], i, grow))
-	}
-
-	return ndatax
-}
-
-type RowBox struct {
-	data       []string
-	datax      []string
-	labels     []*gtk.Label
-	changedMax []int
-	box        *gtk.Box
-}
-
-func newRowBox(d []string, tab *Tablam) RowBox {
-	var rb RowBox
-	idx := len(tab.rbs)
-
-	rb.box, _ = gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, tab.hsep)
-	rb.box.SetName(strconv.Itoa(idx))
-	rb.data = d
-
-	//rb.datax = tab.newX(rb.data)
-
-	for i := 0; i < len(rb.data); i++ {
-		drunes := utf8.RuneCountInString(rb.data[i])
-
-		if drunes > tab.max[i] {
-			tab.max[i] = drunes
-			rb.changedMax = append(rb.changedMax, i)
-		}
-
-		grow := tab.max[i] - drunes
-		rb.datax = append(rb.datax, tab.createX(rb.data[i], i, grow))
-	}
-
-	for _, elemx := range rb.datax {
-		ebox, _ := gtk.EventBoxNew()
-		rb.box.Add(ebox)
-		label, _ := gtk.LabelNew(elemx)
-		label.SetMarkup(tab.dataMarkup[0] + elemx + tab.dataMarkup[1])
-		ebox.Add(label)
-		rb.labels = append(rb.labels, label)
-	}
-
-	rb.box.Connect("button-press-event", func(_ *gtk.Box, e *gdk.Event) bool {
-		//eb := e.Button()
-		name, _ := rb.box.GetName()
-		namint, _ := strconv.Atoi(name)
-		fmt.Println(namint)
-
-		if namint > tab.outPosition {
-			//if e.IsDoubleClick(eb) {
-			//
-			//} else if tab.position != namint {
-			tab.lastPosition = tab.position
-			tab.position = namint
-			tab.updateCursor()
-			//}
-		} else {
-			fmt.Println("button pressed at header")
-		}
-		return false
-	})
-
-	rb.box.ShowAll()
-	return rb
+func (t Tablam) GetCursorPosition() int {
+	return cursorPosition
 }

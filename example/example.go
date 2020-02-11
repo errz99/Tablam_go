@@ -19,6 +19,8 @@ const dmb string = "</tt></span>"
 const cma string = "<span foreground=\"black\" background=\"yellow\" size=\"medium\"><tt>"
 const cmb string = "</tt></span>"
 
+var shift bool = false
+
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
@@ -61,9 +63,17 @@ func mainWin(mbData [][]string) {
 	vbox.Add(headText)
 
 	aligns := []string{"rigth", "left", "center", "left"}
-	tab := tb.NewTablam(mbData, true, aligns)
+	tab := tb.NewTablam(mbData[0], aligns)
+	tab.SetHeadAligns([]string{"left", "left", "center", "left"})
+
+	for i := 1; i < len(mbData); i++ {
+		tab.AddRow(mbData[i])
+	}
+
+	tab.Box.SetMarginTop(8)
+	tab.Box.SetBorderWidth(8)
 	tab.SetCursorMarkup(cma, cmb)
-	vbox.Add(tab.Grid)
+	vbox.Add(tab.Box)
 
 	gridContext, _ := tab.Grid.GetStyleContext()
 	gridContext.AddProvider(provider, gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
@@ -81,6 +91,10 @@ func mainWin(mbData [][]string) {
 		kval := eventKey.KeyVal()
 
 		switch kval {
+		case gdk.KEY_Shift_L:
+			shift = true
+			fmt.Println("shift active")
+
 		case gdk.KEY_Up:
 			tab.CursorUp()
 
@@ -102,14 +116,18 @@ func mainWin(mbData [][]string) {
 			}
 
 		case gdk.KEY_Delete:
-			tab.DeleteActiveRow()
+			if shift == true {
+				tab.DeleteAll()
+			} else {
+				tab.DeleteActiveRow()
+			}
 
 		case gdk.KEY_Insert:
 			tab.AddRow(modify([]string{"20190101", "Mi veloz router",
 				"www.here.com", "Acceso all router de casa"}))
 
 		case gdk.KEY_F12:
-			tab.ReverseData()
+			//tab.ReverseData()
 
 		case gdk.KEY_e:
 			//if eventKey.state & ModifierType.CONTROL_MASK) {
@@ -124,6 +142,18 @@ func mainWin(mbData [][]string) {
 		}
 	})
 
+	mwin.Connect("key-release-event", func(_ *gtk.Window, event *gdk.Event) {
+		eventKey := gdk.EventKeyNewFromEvent(event)
+		kval := eventKey.KeyVal()
+
+		switch kval {
+		case gdk.KEY_Shift_L:
+			shift = false
+			fmt.Println("shift inactive")
+		default:
+		}
+	})
+
 	mwin.Connect("scroll-event", func(_ *gtk.Window, event *gdk.Event) {
 		fmt.Println("scroll event")
 	})
@@ -131,21 +161,20 @@ func mainWin(mbData [][]string) {
 	mwin.Connect("button-press-event", func(_ *gtk.Window, event *gdk.Event) {
 		fmt.Println("button press event")
 
-		//		auto eb = e.button();
-		//
-		//		if (e.isDoubleClick(eb)) {
-		//			writeln("tab double check: get row data");
-		//			if (tab.activeData() != []) {
-		//				writeln(tab.activeData());
-		//			} else {
-		//				writeln("no data active");
-		//			}
-		//
-		//		} else {
-		//			//writeln("tab single check: get position");
-		//		}
-		//		return true;
+		//auto eb = e.button();
 
+		//if (e.isDoubleClick(eb)) {
+		//	writeln("tab double check: get row data");
+		//	if (tab.activeData() != []) {
+		//		writeln(tab.activeData());
+		//	} else {
+		//		writeln("no data active");
+		//	}
+		//} else {
+		//	fmt.Println("tab single check: get position")
+		//}
+
+		//return true
 	})
 
 	mwin.ShowAll()
