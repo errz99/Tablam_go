@@ -63,15 +63,17 @@ func mainWin(mbData [][]string) {
 	vbox.Add(headText)
 
 	aligns := []string{"rigth", "left", "center", "left"}
+	//tb.RowSep = 0
+	//tb.ColumnSep = 0
+	//tb.LeftRightMargin = 2
+
 	tab := tb.NewTablam(mbData[0], aligns)
 	tab.SetHeadAligns([]string{"left", "left", "center", "left"})
 
 	tab.Box.SetMarginTop(8)
 	tab.Box.SetBorderWidth(8)
 	//tab.SetCursorMarkup(cma, cmb)
-	tab.SetRowSeparation(0)
-	tab.SetColumnSeparation(0)
-	tab.SetLeftAndRightMargin(2)
+	//tab.SetDataMarkupEqual()
 
 	for i := 1; i < len(mbData); i++ {
 		tab.AddRow(mbData[i])

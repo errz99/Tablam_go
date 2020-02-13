@@ -11,6 +11,7 @@ import (
 	"github.com/gotk3/gotk3/gtk"
 )
 
+// Constants
 const hma string = "<span><tt><b>"
 const hmb string = "</b></tt></span>"
 const dmae string = "<span background=\"white\"><tt>"
@@ -21,7 +22,7 @@ const cma string = "<span foreground=\"white\" background=\"#6666dd\"><tt>"
 const cmb string = "</tt></span>"
 const OUTPOS int = -1
 
-// Global vars
+// Variables
 var headMarkup = [2]string{hma, hmb}
 var dataMarkupE = [2]string{dmae, dmbe}
 var dataMarkupO = [2]string{dmao, dmbo}
@@ -82,15 +83,15 @@ func defaultAligns(n int) []string {
 }
 
 func setDataMarkup(label *gtk.Label, namex string, n int) {
-	if n % 2 == 0 {
+	if n%2 == 0 {
 		label.SetMarkup(dataMarkupE[0] + namex + dataMarkupE[1])
 	} else {
 		label.SetMarkup(dataMarkupO[0] + namex + dataMarkupO[1])
 	}
 }
 
-func setDataMarkups(n int, row *RowBox2) {
-	if n % 2 == 0 {
+func setDataMarkups(n int, row *RowBox) {
+	if n%2 == 0 {
 		for i := 0; i < len(row.Items); i++ {
 			row.Items[i].Label.SetMarkup(dataMarkupE[0] + row.Items[i].Namex + dataMarkupE[1])
 		}
@@ -209,13 +210,13 @@ func (di *DataItem) edit(name string, width int) (bool, int) {
 	return changed, nwidth
 }
 
-type RowBox2 struct {
+type RowBox struct {
 	Items []DataItem
 	Box   *gtk.Box
 }
 
-func NewRowBox2(id int, items []DataItem, t *Tablam) RowBox2 {
-	var rb = RowBox2{items, nil}
+func NewRowBox(id int, items []DataItem, t *Tablam) RowBox {
+	var rb = RowBox{items, nil}
 
 	rb.Box, _ = gtk.BoxNew(gtk.ORIENTATION_HORIZONTAL, ColumnSep)
 	rb.Box.SetName(strconv.Itoa(id))
@@ -240,7 +241,7 @@ func NewRowBox2(id int, items []DataItem, t *Tablam) RowBox2 {
 
 type Tablam struct {
 	head        Header
-	rows        []RowBox2
+	rows        []RowBox
 	colsWidth   []int
 	colsChanged []int
 	aligns      []string
@@ -360,7 +361,7 @@ func (t *Tablam) AddRow(rdata []string) {
 		rowItems = append(rowItems, NewDataItem(elem, t.aligns[i], len(t.rows), t.colsWidth[i]))
 	}
 
-	row := NewRowBox2(len(t.rows), rowItems, t)
+	row := NewRowBox(len(t.rows), rowItems, t)
 	t.Grid.Attach(row.Box, 0, len(t.rows), 1, 1)
 	t.rows = append(t.rows, row)
 
@@ -429,7 +430,7 @@ func (t *Tablam) DeleteAll() {
 			t.Grid.RemoveRow(0)
 		}
 
-		t.rows = []RowBox2{}
+		t.rows = []RowBox{}
 		cursorPosition = OUTPOS
 		lastPosition = OUTPOS
 
@@ -503,20 +504,12 @@ func (t Tablam) SetDataMarkupOdd(a, b string) {
 	dataMarkupO = [2]string{a, b}
 }
 
+func (t Tablam) SetDataMarkupEqual() {
+	dataMarkupO = dataMarkupE
+}
+
 func (t Tablam) SetCursorMarkup(a, b string) {
 	cursorMarkup = [2]string{a, b}
-}
-
-func (t Tablam) SetRowSeparation(sep int) {
-	RowSep = sep
-}
-
-func (t Tablam) SetColumnSeparation(sep int) {
-	ColumnSep = sep
-}
-
-func (t Tablam) SetLeftAndRightMargin(margin int) {
-	LeftRightMargin = margin
 }
 
 func (t Tablam) GetCursorPosition() int {
