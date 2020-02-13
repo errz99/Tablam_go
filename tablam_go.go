@@ -13,15 +13,18 @@ import (
 
 const hma string = "<span><tt><b>"
 const hmb string = "</b></tt></span>"
-const dma string = "<span background=\"white\"><tt>"
-const dmb string = "</tt></span>"
+const dmae string = "<span background=\"white\"><tt>"
+const dmbe string = "</tt></span>"
+const dmao string = "<span background=\"#e8e8e8\"><tt>"
+const dmbo string = "</tt></span>"
 const cma string = "<span foreground=\"white\" background=\"#6666dd\"><tt>"
 const cmb string = "</tt></span>"
 const OUTPOS int = -1
 
 // Global vars
 var headMarkup = [2]string{hma, hmb}
-var dataMarkup = [2]string{dma, dmb}
+var dataMarkupE = [2]string{dmae, dmbe}
+var dataMarkupO = [2]string{dmao, dmbo}
 var cursorMarkup = [2]string{cma, cmb}
 
 var RowSep = 2
@@ -76,6 +79,27 @@ func defaultAligns(n int) []string {
 	}
 
 	return aligns
+}
+
+func setDataMarkup(label *gtk.Label, namex string, n int) {
+	if n % 2 == 0 {
+		label.SetMarkup(dataMarkupE[0] + namex + dataMarkupE[1])
+	} else {
+		label.SetMarkup(dataMarkupO[0] + namex + dataMarkupO[1])
+	}
+}
+
+func setDataMarkups(n int, row *RowBox2) {
+	if n % 2 == 0 {
+		for i := 0; i < len(row.Items); i++ {
+			row.Items[i].Label.SetMarkup(dataMarkupE[0] + row.Items[i].Namex + dataMarkupE[1])
+		}
+
+	} else {
+		for i := 0; i < len(row.Items); i++ {
+			row.Items[i].Label.SetMarkup(dataMarkupO[0] + row.Items[i].Namex + dataMarkupO[1])
+		}
+	}
 }
 
 // Head
@@ -150,22 +174,22 @@ type DataItem struct {
 	Label    *gtk.Label
 }
 
-func NewDataItem(name string, width int, align string) DataItem {
+func NewDataItem(name, align string, n, width int) DataItem {
 	grow := width - utf8.RuneCountInString(name)
 	namex := generateX(name, align, grow)
 
 	ebox, _ := gtk.EventBoxNew()
 	label, _ := gtk.LabelNew(namex)
-	label.SetMarkup(dataMarkup[0] + namex + dataMarkup[1])
+	setDataMarkup(label, namex, n)
 	ebox.Add(label)
 
 	return DataItem{name, namex, align, ebox, label}
 }
 
-func (di *DataItem) refreshWidth(width int) {
+func (di *DataItem) refreshWidth(n, width int) {
 	grow := width - utf8.RuneCountInString(di.Name)
 	di.Namex = generateX(di.Name, di.Align, grow)
-	di.Label.SetMarkup(dataMarkup[0] + di.Namex + dataMarkup[1])
+	setDataMarkup(di.Label, di.Namex, n)
 }
 
 func (di *DataItem) edit(name string, width int) (bool, int) {
@@ -291,10 +315,7 @@ func (t *Tablam) CursorUp() int {
 
 func (t *Tablam) updateCursor() {
 	if lastPosition > OUTPOS {
-		for i := 0; i < len(t.rows[0].Items); i++ {
-			t.rows[lastPosition].Items[i].Label.SetMarkup(  // index out of range
-				dataMarkup[0] + t.rows[lastPosition].Items[i].Namex + dataMarkup[1])
-		}
+		setDataMarkups(lastPosition, &t.rows[lastPosition])
 	}
 
 	if cursorPosition >= OUTPOS {
@@ -336,7 +357,7 @@ func (t *Tablam) AddRow(rdata []string) {
 	var rowItems []DataItem
 
 	for i, elem := range rdata {
-		rowItems = append(rowItems, NewDataItem(elem, t.colsWidth[i], t.aligns[i]))
+		rowItems = append(rowItems, NewDataItem(elem, t.aligns[i], len(t.rows), t.colsWidth[i]))
 	}
 
 	row := NewRowBox2(len(t.rows), rowItems, t)
@@ -392,6 +413,8 @@ func (t *Tablam) DeleteActiveRow() {
 			cursorPosition--
 		}
 
+		t.refreshDataMarkup()
+
 		if cursorPosition > OUTPOS {
 			t.markupActiveRow()
 			t.UpdateBoxNames()
@@ -426,7 +449,7 @@ func (t *Tablam) refreshLabels() {
 		}
 
 		for i := 0; i < len(t.rows); i++ {
-			t.rows[i].Items[n].refreshWidth(t.colsWidth[n])
+			t.rows[i].Items[n].refreshWidth(i, t.colsWidth[n])
 		}
 	}
 }
@@ -441,10 +464,7 @@ func (t *Tablam) CursorIsActive() bool {
 
 func (t *Tablam) ClearCursor() int {
 	if cursorPosition > OUTPOS {
-		for i := 0; i < len(t.rows[0].Items); i++ {
-			t.rows[cursorPosition].Items[i].Label.SetMarkup(
-				dataMarkup[0] + t.rows[cursorPosition].Items[i].Namex + dataMarkup[1])
-		}
+		setDataMarkups(cursorPosition, &t.rows[cursorPosition])
 		cursorPosition = OUTPOS
 	}
 
@@ -475,14 +495,36 @@ func (t Tablam) SetHeadMarkup(a, b string) {
 	headMarkup = [2]string{a, b}
 }
 
-func (t Tablam) SetDataMarkup(a, b string) {
-	headMarkup = [2]string{a, b}
+func (t Tablam) SetDataMarkupEven(a, b string) {
+	dataMarkupE = [2]string{a, b}
+}
+
+func (t Tablam) SetDataMarkupOdd(a, b string) {
+	dataMarkupO = [2]string{a, b}
 }
 
 func (t Tablam) SetCursorMarkup(a, b string) {
 	cursorMarkup = [2]string{a, b}
 }
 
+func (t Tablam) SetRowSeparation(sep int) {
+	RowSep = sep
+}
+
+func (t Tablam) SetColumnSeparation(sep int) {
+	ColumnSep = sep
+}
+
+func (t Tablam) SetLeftAndRightMargin(margin int) {
+	LeftRightMargin = margin
+}
+
 func (t Tablam) GetCursorPosition() int {
 	return cursorPosition
+}
+
+func (t *Tablam) refreshDataMarkup() {
+	for i := 0; i < len(t.rows); i++ {
+		setDataMarkups(i, &t.rows[i])
+	}
 }
